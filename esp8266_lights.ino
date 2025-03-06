@@ -82,10 +82,14 @@ void setup() {
   timer1_attachInterrupt(tick);
 
   WiFi.mode(WIFI_STA);
-  WiFi.begin(SSID, PASSWORD);
-  if (WiFi.waitForConnectResult() != WL_CONNECTED) {
+
+  while(true) {
+    WiFi.begin(SSID, PASSWORD);
+    if (WiFi.waitForConnectResult() == WL_CONNECTED) {
+      break;
+    }
+    
     DEBUG_SERIAL.printf("WiFi Failed!\n");
-    return;
   }
 
   DEBUG_SERIAL.print("IP Address: ");
