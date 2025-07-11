@@ -127,7 +127,7 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
   GPOC = (1 << PWM2);
 
   if (strcmp(topic, commandTopic.c_str()) == 0 && strncmp((char *)payload, "OFF", length) == 0) {
-    mqtt_client.publish(stateTopic.c_str(), "OFF", true);
+    mqtt_client.publish(stateTopic.c_str(), "OFF", false);
   } else if (strcmp(topic, brightnessCommandTopic.c_str()) == 0) {
     // Brightness is max 50
     char buffer[3];
@@ -145,8 +145,8 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
       timer1_write(400);
     }
 
-    mqtt_client.publish(stateTopic.c_str(), "ON", true);
-    mqtt_client.publish(brightnessStateTopic.c_str(), buffer, true);
+    mqtt_client.publish(stateTopic.c_str(), "ON", false);
+    mqtt_client.publish(brightnessStateTopic.c_str(), buffer, false);
   }
 }
 
