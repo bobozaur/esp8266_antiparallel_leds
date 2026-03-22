@@ -8,8 +8,9 @@
 WiFiClient espClient;
 PubSubClient mqtt_client(espClient);
 
-// State that we reset the PWM state machine to when the flow is over and needs to start again.
-char reset_state;
+// State that we reset the PWM state machine to when the flow is over and needs
+// to start again.
+char reset_state = 1;
 
 // Current state of the PWM state machine.
 volatile char state = 1;
@@ -26,36 +27,50 @@ String brightnessStateTopic = baseTopic + "/brightness";
 String brightnessCommandTopic = baseTopic + "/brightness/set";
 String availabilityTopic = baseTopic + "/status";
 
+// clang-format off
 // Discovery Payload
-String discoveryPayload = "{\"name\":\"ESP Lights\",\"uniq_id\":\""
-                          + clientId + "\",\"stat_t\":\"" + stateTopic + "\",\"cmd_t\":\"" + commandTopic + "\",\"avty_t\":\""
-                          + availabilityTopic + "\",\"bri_stat_t\":\"" + brightnessStateTopic + "\",\"bri_cmd_t\":\"" + brightnessCommandTopic
-                          + "\",\"bri_scl\":50,\"on_cmd_type\":\"brightness\",\"dev_cla\":\"illuminance\",\"ret\":true,\"schema\":\"basic\",\"dev\":{\"ids\":[\""
-                          + clientId + "\"],\"name\":\"ESP Lights\",\"mdl\":\"ESP8266\",\"mf\": \"Bogdan Mircea\"}}";
+String discoveryPayload =
+    "{\"name\":\"ESP Lights\""
+    ",\"uniq_id\":\"" + clientId + "\""
+    ",\"stat_t\":\"" + stateTopic + "\""
+    ",\"cmd_t\":\"" + commandTopic + "\""
+    ",\"avty_t\":\"" + availabilityTopic + "\""
+    ",\"bri_stat_t\":\"" + brightnessStateTopic + "\""
+    ",\"bri_cmd_t\":\"" + brightnessCommandTopic + "\""
+    ",\"bri_scl\":50"
+    ",\"dev_cla\":\"illuminance\""
+    ",\"ret\":true"
+    ",\"schema\":\"basic\""
+    ",\"dev\":{\"ids\":[\"" + clientId + "\"]"
+      ",\"name\":\"ESP Lights\""
+      ",\"mdl\":\"ESP8266\""
+      ",\"mf\":\"Bogdan Mircea\"}"
+    "}";
+// clang-format on
 
 // Timer1 ISR
 IRAM_ATTR void tick() {
   switch (state) {
-    // Disable PWM1 pin, enable PWM2 pin and reset PWM state machine.
-    case 0:
-      GPOC = (1 << PWM1);
-      GPOS = (1 << PWM2);
-      state = reset_state;
-      break;
+  // Disable PWM1 pin, enable PWM2 pin and reset PWM state machine.
+  case 0:
+    GPOC = (1 << PWM1);
+    GPOS = (1 << PWM2);
+    state = reset_state;
+    break;
 
-      // Disable PWMw pin, enable PWM1 pin and decrement PWM state machine.
-    case 1:
-      GPOC = (1 << PWM2);
-      GPOS = (1 << PWM1);
-      state--;
-      break;
+  // Disable PWM2 pin, enable PWM1 pin and decrement PWM state machine.
+  case 1:
+    GPOC = (1 << PWM2);
+    GPOS = (1 << PWM1);
+    state--;
+    break;
 
-      // Disable PWM1 pin, disable PWM2 pin and decrement PWM state machine.
-    default:
-      GPOC = (1 << PWM1);
-      GPOC = (1 << PWM2);
-      state--;
-      break;
+  // Disable PWM1 pin, disable PWM2 pin and decrement PWM state machine.
+  default:
+    GPOC = (1 << PWM1);
+    GPOC = (1 << PWM2);
+    state--;
+    break;
   }
 }
 
@@ -100,9 +115,11 @@ void connectToWiFi() {
 
 void connectToMQTTBroker() {
   while (!mqtt_client.connected()) {
-    DEBUG_SERIAL.printf("Connecting to MQTT Broker as %s.....\n", clientId.c_str());
+    DEBUG_SERIAL.printf("Connecting to MQTT Broker as %s.....\n",
+                        clientId.c_str());
 
-    if (mqtt_client.connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD, availabilityTopic.c_str(), 1, true, "offline")) {
+    if (mqtt_client.connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD,
+                            availabilityTopic.c_str(), 1, true, "offline")) {
       DEBUG_SERIAL.println("Connected to MQTT broker");
 
       mqtt_client.subscribe(commandTopic.c_str());
@@ -121,13 +138,18 @@ void connectToMQTTBroker() {
 void mqttCallback(char *topic, byte *payload, unsigned int length) {
   DEBUG_SERIAL.printf("Handling message from topic: %s\n", topic);
 
-  // Disable timer1 and both PWM1 and PWM2 pins.
-  timer1_disable();
-  GPOC = (1 << PWM1);
-  GPOC = (1 << PWM2);
-
-  if (strcmp(topic, commandTopic.c_str()) == 0 && strncmp((char *)payload, "OFF", length) == 0) {
-    mqtt_client.publish(stateTopic.c_str(), "OFF", false);
+  if (strcmp(topic, commandTopic.c_str()) == 0) {
+    if (length == 2 && strncmp((char *)payload, "ON", 2) == 0) {
+      state = reset_state;
+      timer1_enable(TIM_DIV1, TIM_EDGE, TIM_LOOP);
+      timer1_write(400);
+      mqtt_client.publish(stateTopic.c_str(), "ON", false);
+    } else if (length == 3 && strncmp((char *)payload, "OFF", 3) == 0) {
+      timer1_disable();
+      GPOC = (1 << PWM1);
+      GPOC = (1 << PWM2);
+      mqtt_client.publish(stateTopic.c_str(), "OFF", false);
+    }
   } else if (strcmp(topic, brightnessCommandTopic.c_str()) == 0) {
     // Brightness is max 50
     char buffer[3];
@@ -141,16 +163,16 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
     if (value) {
       reset_state = 100 / value - 1;
       state = reset_state;
-      timer1_enable(TIM_DIV1, TIM_EDGE, TIM_LOOP);
-      timer1_write(400);
     }
 
-    mqtt_client.publish(stateTopic.c_str(), "ON", false);
     mqtt_client.publish(brightnessStateTopic.c_str(), buffer, false);
   }
 }
 
 void loop() {
+  if (WiFi.status() != WL_CONNECTED) {
+    connectToWiFi();
+  }
   if (!mqtt_client.connected()) {
     connectToMQTTBroker();
   }
